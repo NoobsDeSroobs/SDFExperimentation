@@ -1,0 +1,11 @@
+*.sdf
+*.sln
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+*.opensdf
+*.v11.suo
+*.tlog
+bin
+Debug
+x64
