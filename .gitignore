@@ -9,3 +9,5 @@
 bin
 Debug
 x64
+# Rust
+/target
