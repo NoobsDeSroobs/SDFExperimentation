@@ -6,12 +6,19 @@
 //   world_point  - a position in the scene
 //   local_point  - a position relative to the shape's own origin (what sd* functions take)
 
-#define MAT_GROUND 0.0
-#define MAT_BLOB   1.0
-#define MAT_BOX    2.0
-#define MAT_TORUS  3.0
-#define MAT_SPHERE 4.0
-#define MAT_SKIN   5.0
+// What the scene returns for a point: how far the nearest surface is, and its colour.
+// Smooth unions blend the colours as well as the distances.
+struct Surface {
+    float signed_distance;
+    vec3  albedo_color;
+};
+
+const vec3 COLOR_BLOB   = vec3(0.9, 0.35, 0.25);
+const vec3 COLOR_BOX    = vec3(0.3, 0.7, 0.4);
+const vec3 COLOR_TORUS  = vec3(0.9, 0.8, 0.3);
+const vec3 COLOR_SPHERE = vec3(0.4, 0.5, 0.9);
+const vec3 COLOR_SKIN   = vec3(0.85, 0.65, 0.55);
+const vec3 COLOR_BALL   = vec3(1.0, 0.05, 0.05);
 
 // ---- Primitives (centred on the origin of local space) ----
 float sdSphere(vec3 local_point, float radius) { return length(local_point) - radius; }
@@ -103,8 +110,20 @@ float opSmoothIntersect(float distance_a, float distance_b, float blend_distance
          + blend_distance * blend_factor * (1.0 - blend_factor);
 }
 
-// Same union for (distance, material id) pairs: keeps the nearer surface
-vec2 opUnion(vec2 surface_a, vec2 surface_b) { return surface_a.x < surface_b.x ? surface_a : surface_b; }
+// The same operations on surfaces. Hard union keeps the nearer surface (and its colour).
+Surface opUnion(Surface surface_a, Surface surface_b) {
+    return surface_a.signed_distance < surface_b.signed_distance ? surface_a : surface_b;
+}
+
+// Smooth union that also mixes the colours, using the same blend factor as the distances
+Surface opSmoothUnion(Surface surface_a, Surface surface_b, float blend_distance) {
+    float blend_factor = clamp(0.5 + 0.5 * (surface_b.signed_distance - surface_a.signed_distance)
+                               / blend_distance, 0.0, 1.0);
+    float blended_distance = mix(surface_b.signed_distance, surface_a.signed_distance, blend_factor)
+                           - blend_distance * blend_factor * (1.0 - blend_factor);
+    vec3 blended_color = mix(surface_b.albedo_color, surface_a.albedo_color, blend_factor);
+    return Surface(blended_distance, blended_color);
+}
 
 // ---- Building shapes: add/subtract a primitive to the distance so far ----
 // distance_so_far: the shape's distance accumulated so far
@@ -160,6 +179,6 @@ float smoothAddRoundCylinder(float distance_so_far, vec3 sample_point, vec3 star
 #define BOUND_MARGIN 0.2
 #define BOUNDED(nearest_surface, local_point, bound_center_point, bound_radius, shape_call) { \
     float distance_to_bound = length((local_point) - (bound_center_point)) - (bound_radius); \
-    if (distance_to_bound > BOUND_MARGIN) nearest_surface = opUnion(nearest_surface, vec2(distance_to_bound, -1.0)); \
+    if (distance_to_bound > BOUND_MARGIN) nearest_surface = opUnion(nearest_surface, Surface(distance_to_bound, vec3(0.0))); \
     else nearest_surface = opUnion(nearest_surface, shape_call); \
 }

@@ -8,7 +8,7 @@ const float HUMAN_RADIUS = 5.5;
 const float HUMAN_BLEND = 0.06;
 
 // human_local_point: the point to measure from, relative to the human's feet
-vec2 sdHuman(vec3 human_local_point) {
+Surface sdHuman(vec3 human_local_point) {
     const float blend_distance = HUMAN_BLEND;
     // Each cylinder has the form (start point, end point, radius, edge rounding)
     float human_distance = sdSphere(human_local_point - vec3(0.0, 1.62, 0.0), 0.12);                                                  // head
@@ -25,5 +25,5 @@ vec2 sdHuman(vec3 human_local_point) {
     human_distance = smoothAddRoundCylinder(human_distance, human_local_point, vec3(0.10, 1.08, 0.0),  vec3(0.11, 0.52, 0.0),   0.07,  0.055, blend_distance);  // right thigh
     human_distance = smoothAddRoundCylinder(human_distance, human_local_point, vec3(0.11, 0.54, 0.0),  vec3(0.11, 0.02, 0.0),   0.055, 0.045, blend_distance);  // right shin
 
-    return vec2(human_distance, MAT_SKIN);
+    return Surface(human_distance, COLOR_SKIN);
 }
