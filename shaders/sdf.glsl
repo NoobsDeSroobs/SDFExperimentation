@@ -176,7 +176,10 @@ float smoothAddRoundCylinder(float distance_so_far, vec3 sample_point, vec3 star
 // full shape evaluated. Use inside map():
 //   vec3 human_local_point = world_point - human_world_position;
 //   BOUNDED(nearest_surface, human_local_point, HUMAN_CENTER, HUMAN_RADIUS, sdHuman(human_local_point));
-#define BOUND_MARGIN 0.2
+// The margin must stay at least MAX_SHADOW_DISTANCE / 8 (see raymarch.fs): otherwise the soft
+// shadow treats the stand-in distance as a real object and the invisible sphere casts a faint
+// shadow, which shows up as rings on nearby surfaces.
+#define BOUND_MARGIN 1.0
 #define BOUNDED(nearest_surface, local_point, bound_center_point, bound_radius, shape_call) { \
     float distance_to_bound = length((local_point) - (bound_center_point)) - (bound_radius); \
     if (distance_to_bound > BOUND_MARGIN) nearest_surface = opUnion(nearest_surface, Surface(distance_to_bound, vec3(0.0))); \

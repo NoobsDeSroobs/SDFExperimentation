@@ -76,14 +76,19 @@ vec3 calcNormal(vec3 world_point) {
                      offset_signs.xxx * map(world_point + offset_signs.xxx).signed_distance);
 }
 
+// Shadow rays stop here: the light has faded away by then, and long rays only add banding
+#define MAX_SHADOW_DISTANCE 6.0
+
 // 1 = fully lit, 0 = fully in shadow, along a ray from shadow_ray_origin_point
 float softShadow(vec3 shadow_ray_origin_point, vec3 shadow_ray_direction, float max_distance) {
+    // Steps are capped small: with big steps the sampled penumbra jumps between samples and
+    // shows up as rings on surfaces.
     float shadow_amount = 1.0;
     float travelled_distance = 0.02;
-    for (int march_step = 0; march_step < 64; march_step++) {
+    for (int march_step = 0; march_step < 256; march_step++) {
         float nearest_distance = map(shadow_ray_origin_point + shadow_ray_direction * travelled_distance).signed_distance;
         shadow_amount = min(shadow_amount, 8.0 * nearest_distance / travelled_distance);
-        travelled_distance += clamp(nearest_distance, 0.01, 0.5);
+        travelled_distance += clamp(nearest_distance, 0.005, 0.1);
         if (shadow_amount < 0.001 || travelled_distance > max_distance) break;
     }
     return clamp(shadow_amount, 0.0, 1.0);
@@ -134,7 +139,7 @@ void main() {
         vec3 light_direction = hit_to_light / light_distance;
 
         float diffuse = max(dot(surface_normal, light_direction), 0.0)
-                      * softShadow(hit_world_point + surface_normal * 0.01, light_direction, light_distance);
+                      * softShadow(hit_world_point + surface_normal * 0.01, light_direction, min(light_distance, MAX_SHADOW_DISTANCE));
         float specular = pow(max(dot(reflect(-light_direction, surface_normal), -ray_direction), 0.0), 32.0)
                        * step(0.0, dot(surface_normal, light_direction));
         float light_attenuation = 1.0 / (1.0 + 0.05 * light_distance * light_distance);
