@@ -1,5 +1,6 @@
 use glam::Vec3;
 use miniquad::*;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 // Raymarch parameters
@@ -32,6 +33,80 @@ struct Uniforms {
     time: f32,
 }
 
+/// The shaders folder: `./shaders` if present, else the one next to Cargo.toml.
+fn find_shader_dir() -> PathBuf {
+    let local = PathBuf::from("shaders");
+    if local.is_dir() {
+        local
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("shaders")
+    }
+}
+
+/// Reads a GLSL file and expands `#include "file"` lines (relative to `dir`), since GLSL
+/// has no include of its own.
+fn load_glsl(dir: &Path, name: &str, depth: u32) -> Result<String, String> {
+    if depth > 8 {
+        return Err(format!("{name}: includes nested too deeply (cycle?)"));
+    }
+    let path = dir.join(name);
+    let src = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        match line.trim().strip_prefix("#include") {
+            Some(rest) => {
+                let file = rest.trim().trim_matches('"');
+                out.push_str(&load_glsl(dir, file, depth + 1)?);
+            }
+            None => out.push_str(line),
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+fn build_pipeline(ctx: &mut dyn RenderingBackend, dir: &Path) -> Result<Pipeline, String> {
+    let vertex = load_glsl(dir, "raymarch.vs", 0)?;
+    let fragment = load_glsl(dir, "raymarch.fs", 0)?;
+    let shader = ctx
+        .new_shader(
+            ShaderSource::Glsl {
+                vertex: &vertex,
+                fragment: &fragment,
+            },
+            ShaderMeta {
+                images: vec![],
+                uniforms: UniformBlockLayout {
+                    uniforms: vec![
+                        UniformDesc::new("g_resolution", UniformType::Float2),
+                        UniformDesc::new("g_camUp", UniformType::Float3),
+                        UniformDesc::new("g_camRight", UniformType::Float3),
+                        UniformDesc::new("g_camForward", UniformType::Float3),
+                        UniformDesc::new("g_eye", UniformType::Float3),
+                        UniformDesc::new("g_focalLength", UniformType::Float1),
+                        UniformDesc::new("g_zNear", UniformType::Float1),
+                        UniformDesc::new("g_zFar", UniformType::Float1),
+                        UniformDesc::new("g_rmSteps", UniformType::Int1),
+                        UniformDesc::new("g_rmEpsilon", UniformType::Float1),
+                        UniformDesc::new("g_skyColor", UniformType::Float4),
+                        UniformDesc::new("g_ambient", UniformType::Float4),
+                        UniformDesc::new("g_light0Position", UniformType::Float3),
+                        UniformDesc::new("g_light0Color", UniformType::Float4),
+                        UniformDesc::new("g_time", UniformType::Float1),
+                    ],
+                },
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(ctx.new_pipeline(
+        &[BufferLayout::default()],
+        &[VertexAttribute::new("position", VertexFormat::Float2)],
+        shader,
+        PipelineParams::default(),
+    ))
+}
+
 #[derive(Default)]
 struct Keys {
     w: bool,
@@ -50,6 +125,7 @@ struct Keys {
 struct Stage {
     ctx: Box<dyn RenderingBackend>,
     pipeline: Pipeline,
+    shader_dir: PathBuf,
     bindings: Bindings,
     keys: Keys,
     eye: Vec3,
@@ -85,43 +161,8 @@ impl Stage {
             images: vec![],
         };
 
-        let shader = ctx
-            .new_shader(
-                ShaderSource::Glsl {
-                    vertex: include_str!("../shaders/raymarch.vs"),
-                    fragment: include_str!("../shaders/raymarch.fs"),
-                },
-                ShaderMeta {
-                    images: vec![],
-                    uniforms: UniformBlockLayout {
-                        uniforms: vec![
-                            UniformDesc::new("g_resolution", UniformType::Float2),
-                            UniformDesc::new("g_camUp", UniformType::Float3),
-                            UniformDesc::new("g_camRight", UniformType::Float3),
-                            UniformDesc::new("g_camForward", UniformType::Float3),
-                            UniformDesc::new("g_eye", UniformType::Float3),
-                            UniformDesc::new("g_focalLength", UniformType::Float1),
-                            UniformDesc::new("g_zNear", UniformType::Float1),
-                            UniformDesc::new("g_zFar", UniformType::Float1),
-                            UniformDesc::new("g_rmSteps", UniformType::Int1),
-                            UniformDesc::new("g_rmEpsilon", UniformType::Float1),
-                            UniformDesc::new("g_skyColor", UniformType::Float4),
-                            UniformDesc::new("g_ambient", UniformType::Float4),
-                            UniformDesc::new("g_light0Position", UniformType::Float3),
-                            UniformDesc::new("g_light0Color", UniformType::Float4),
-                            UniformDesc::new("g_time", UniformType::Float1),
-                        ],
-                    },
-                },
-            )
-            .unwrap_or_else(|e| panic!("shader error: {e:?}"));
-
-        let pipeline = ctx.new_pipeline(
-            &[BufferLayout::default()],
-            &[VertexAttribute::new("position", VertexFormat::Float2)],
-            shader,
-            PipelineParams::default(),
-        );
+        let shader_dir = find_shader_dir();
+        let pipeline = build_pipeline(ctx.as_mut(), &shader_dir).unwrap_or_else(|e| panic!("{e}"));
 
         window::set_cursor_grab(true);
         window::show_mouse(false);
@@ -130,6 +171,7 @@ impl Stage {
         Stage {
             ctx,
             pipeline,
+            shader_dir,
             bindings,
             keys: Keys::default(),
             eye: Vec3::new(0.0, 0.5, -4.0),
@@ -242,10 +284,19 @@ impl EventHandler for Stage {
         self.phi = (self.phi - dy * MOUSE_SENSITIVITY).clamp(-limit, limit);
     }
 
-    fn key_down_event(&mut self, key: KeyCode, _mods: KeyMods, _repeat: bool) {
+    fn key_down_event(&mut self, key: KeyCode, _mods: KeyMods, repeat: bool) {
         self.set_key(key, true);
-        if key == KeyCode::Escape {
-            window::request_quit();
+        match key {
+            KeyCode::Escape => window::request_quit(),
+            KeyCode::R if !repeat => match build_pipeline(self.ctx.as_mut(), &self.shader_dir) {
+                Ok(pipeline) => {
+                    self.ctx.delete_pipeline(self.pipeline);
+                    self.pipeline = pipeline;
+                    println!("Shaders reloaded");
+                }
+                Err(e) => eprintln!("Shader reload failed, keeping the old one:\n{e}"),
+            },
+            _ => {}
         }
     }
 

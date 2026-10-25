@@ -44,6 +44,14 @@ float sdCylinderBetween(vec3 p, vec3 a, vec3 b, float r) {
     return sign(d) * sqrt(abs(d)) / baba;
 }
 
+// Same cylinder with its edges rounded off by radius rr (0 <= rr < r, and 2*rr < length).
+// rr = r would give a capsule. The shape is shrunk by rr and then inflated by rr again,
+// so the overall size stays the same.
+float sdRoundCylinderBetween(vec3 p, vec3 a, vec3 b, float r, float rr) {
+    vec3 dir = normalize(b - a);
+    return sdCylinderBetween(p, a + dir * rr, b - dir * rr, r - rr) - rr;
+}
+
 float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
     vec3 pa = p - a, ba = b - a;
     float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
@@ -103,6 +111,16 @@ float subtractCylinder(float d, vec3 p, vec3 a, vec3 b, float r) {
 }
 float smoothAddCylinder(float d, vec3 p, vec3 a, vec3 b, float r, float k) {
     return opSmoothUnion(d, sdCylinderBetween(p, a, b, r), k);
+}
+
+float addRoundCylinder(float d, vec3 p, vec3 a, vec3 b, float r, float rr) {
+    return opUnion(d, sdRoundCylinderBetween(p, a, b, r, rr));
+}
+float subtractRoundCylinder(float d, vec3 p, vec3 a, vec3 b, float r, float rr) {
+    return opSubtract(d, sdRoundCylinderBetween(p, a, b, r, rr));
+}
+float smoothAddRoundCylinder(float d, vec3 p, vec3 a, vec3 b, float r, float rr, float k) {
+    return opSmoothUnion(d, sdRoundCylinderBetween(p, a, b, r, rr), k);
 }
 
 // ---- Bounding spheres ----
