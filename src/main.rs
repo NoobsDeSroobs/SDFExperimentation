@@ -16,10 +16,10 @@ const FAST_MULTIPLIER: f32 = 5.0;
 
 // Test balls (left click to fire). Must match MAX_BALLS in raymarch.fs.
 const MAX_BALLS: usize = 8;
-const BALL_RADIUS: f32 = 0.3;
+const BALL_RADIUS: f32 = 0.5;
 const BALL_LIFETIME: f32 = 10.0;
 const BALL_FADE: f32 = 0.5; // seconds spent shrinking away at the end of its life
-const BALL_SPEED: f32 = 8.0;
+const BALL_SPEED: f32 = 2.0;
 const BALL_GRAVITY: f32 = 9.8;
 const BALL_BOUNCINESS: f32 = 0.8; // fraction of vertical speed kept after hitting the floor
 const FLOOR_Y: f32 = -1.0; // the ground plane in map()
